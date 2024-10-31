@@ -1,0 +1,440 @@
+#UFPA_Sistemas_de_Informacao
+#Disciplina_Computacao_Grafica
+#ProfDrBianchi_Serique
+#Aluna_Taiane_Lorena_Araujo_da_Silva
+#CódigoemPython
+
+from tkinter import *
+import tkinter as tk
+from tkinter import Canvas, simpledialog
+import numpy as np
+import math
+
+
+# Definição de códigos para o algoritmo de Cohen-Sutherland
+INSIDE = 0  # 0000
+LEFT = 1    # 0001
+RIGHT = 2   # 0010
+BOTTOM = 4  # 0100
+TOP = 8     # 1000
+
+class CoordinateSystemApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Coordenadas - Algoritmos")
+
+        # Configuração do canvas para desenhar a grade
+        self.canvas = Canvas(root, width=440, height=440, bg="white")
+        self.canvas.grid(row=0, column=0, rowspan=25)
+        self.canvas.bind("<Button-1>", self.click_canvas)
+
+        #Inicialização de variáveis
+        self.points = []  #Armazena os pontos para desenhar ou transformar
+        self.polygon_points = []  #Lista de pontos para um polígono
+        self.algorithm = None
+        self.transformation_type = None  #Tipo de transformação ou projeção
+        self.clip_window = None #Janela de recorte
+        self.fill_color = "blue"  #Cor para preenchimento
+
+        #Botões para algoritmos de desenho e preenchimento
+        self.bresenham_button = tk.Button(root, text="Bresenham", command=lambda: self.set_algorithm("bresenham"))
+        self.bresenham_button.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+
+        self.circle_button = tk.Button(root, text="Círculo", command=lambda: self.set_algorithm("circle"))
+        self.circle_button.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+
+        self.ellipse_button = tk.Button(root, text="Elipse", command=lambda: self.set_algorithm("ellipse"))
+        self.ellipse_button.grid(row=2, column=1, padx=10, pady=5, sticky="w")
+
+        self.bezier2_button = tk.Button(root, text="Bézier Grau 2", command=lambda: self.set_algorithm("bezier2"))
+        self.bezier2_button.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+
+        self.bezier3_button = tk.Button(root, text="Bézier Grau 3", command=lambda: self.set_algorithm("bezier3"))
+        self.bezier3_button.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+
+        self.recursive_fill_button = tk.Button(root, text="Preenchimento Recursivo", command=lambda: self.set_algorithm("recursive_fill"))
+        self.recursive_fill_button.grid(row=5, column=1, padx=10, pady=5, sticky="w")
+
+        self.scanline_fill_button = tk.Button(root, text="Preenchimento Varredura", command=lambda: self.set_algorithm("scanline_fill"))
+        self.scanline_fill_button.grid(row=6, column=1, padx=10, pady=5, sticky="w")
+
+        #Botão para polilinha
+        self.polyline_button = tk.Button(root, text="Polilinha", command=lambda: self.set_algorithm("polyline"))
+        self.polyline_button.grid(row=7, column=1, padx=10, pady=5, sticky="w")
+
+        #Botões para projeções
+        self.orthogonal_proj_button = tk.Button(root, text="Projeção Ortogonal", command=lambda: self.set_projection("orthogonal"))
+        self.orthogonal_proj_button.grid(row=8, column=1, padx=10, pady=5, sticky="w")
+
+        self.oblique_proj_button = tk.Button(root, text="Projeção Oblíqua", command=lambda: self.set_projection("oblique"))
+        self.oblique_proj_button.grid(row=9, column=1, padx=10, pady=5, sticky="w")
+
+        self.perspective_proj_button = tk.Button(root, text="Projeção Perspectiva", command=lambda: self.set_projection("perspective"))
+        self.perspective_proj_button.grid(row=10, column=1, padx=10, pady=5, sticky="w")
+
+        # Botão para recorte de linha
+        self.clip_button = tk.Button(root, text="Recorte de Linha", command=lambda: self.set_algorithm("clip"))
+        self.clip_button.grid(row=11, column=1, padx=10, pady=5, sticky="w")
+
+        #Botão para aplicar o algoritmo ou transformação selecionado
+        self.apply_button = tk.Button(root, text="Aplicar", command=self.apply_selection)
+        self.apply_button.grid(row=12, column=1, padx=10, pady=20, sticky="w")
+
+        #Botão para limpar o canvas
+        self.clear_button = tk.Button(root, text="Limpar", command=self.clear_canvas)
+        self.clear_button.grid(row=13, column=1, padx=10, pady=5, sticky="w")
+
+        #Desenhar a grade inicial
+        self.draw_grid()
+
+    def set_algorithm(self, algo):
+        self.algorithm = algo
+        self.transformation_type = None
+        print(f"Algoritmo selecionado: {algo}")
+
+    def set_projection(self, projection):
+        self.transformation_type = projection
+        self.algorithm = None
+        print(f"Projecao selecionada: {projection}")
+
+    def click_canvas(self, event):
+        #Converte o clique para coordenadas no sistema cartesiano centralizado na grade
+        x = (event.x - 220) // 20
+        y = (220 - event.y) // 20
+        self.points.append((x, y))
+        print(f"Ponto marcado: ({x}, {y})")
+
+        # Adiciona o ponto ao polígono e desenha-o na grade
+        self.polygon_points = self.points[:]
+        self.draw_point(event.x,event.y)
+        
+        
+    def draw_grid(self):
+        #Desenha a grade de coordenadas
+        for i in range(0, 440, 20):
+            self.canvas.create_line(i, 0, i, 440, fill="lightgray")
+            self.canvas.create_line(0, i, 440, i, fill="lightgray")
+        #Desenha os eixos
+        self.canvas.create_line(220, 0, 220, 440, fill="black")  #Eixo Y
+        self.canvas.create_line(0, 220, 440, 220, fill="black")  #Eixo X
+    
+    def apply_selection(self):
+        # Aplica o algoritmo selecionado
+        if self.algorithm == "bresenham" and len(self.points) >= 2:
+            self.draw_bresenham(self.points[0], self.points[1])
+        elif self.algorithm == "clip" and len(self.points) >= 2:
+            self.set_clip_window()
+            if self.clip_window and len(self.points) >= 2:
+                self.clip_line(self.points[0], self.points[1])
+    
+    def set_clip_window(self):
+        #Define uma janela de recorte através de diálogo de entrada
+        x_min = simpledialog.askinteger("Recorte - X Mínimo", "Digite o valor de X mínimo para a janela de recorte:")
+        y_min = simpledialog.askinteger("Recorte - Y Mínimo", "Digite o valor de Y mínimo para a janela de recorte:")
+        x_max = simpledialog.askinteger("Recorte - X Máximo", "Digite o valor de X máximo para a janela de recorte:")
+        y_max = simpledialog.askinteger("Recorte - Y Máximo", "Digite o valor de Y máximo para a janela de recorte:")
+        self.clip_window = (x_min, y_min, x_max, y_max)
+        #Desenha a janela de recorte na grade
+        self.draw_clip_window()
+        
+
+    def draw_clip_window(self):
+        if self.clip_window:
+            x_min, y_min, x_max, y_max = self.clip_window
+            # Converte para o sistema de coordenadas do canvas e desenha retângulo
+            canvas_x_min = 220 + x_min * 20
+            canvas_y_min = 220 - y_min * 20
+            canvas_x_max = 220 + x_max * 20
+            canvas_y_max = 220 - y_max * 20
+            self.canvas.create_rectangle(canvas_x_min, canvas_y_min, canvas_x_max, canvas_y_max, outline="black")
+
+    def compute_code(self, x, y):
+        #Calcula o código de localização para o ponto (x, y) com relação à janela de recorte
+        x_min, y_min, x_max, y_max = self.clip_window
+        code = INSIDE
+        if x < x_min: code |= LEFT
+        elif x > x_max: code |= RIGHT
+        if y < y_min: code |= BOTTOM
+        elif y > y_max: code |= TOP
+        return code
+    
+    def draw_point(self, x, y, color="red"):
+        #Desenha um ponto como um pequeno círculo para melhor visualização
+        self.canvas.create_oval(x-5, y-5, x+5, y+5, fill=color, outline="")
+
+    def apply_selection(self):
+        #Aplica o algoritmo projeção selecionada
+        if self.algorithm:
+            self.apply_algorithm()
+        elif self.transformation_type in ["orthogonal", "oblique", "perspective"]:
+            self.apply_projection()
+            self.draw_bresenham(self.points[0], self.points[1])
+
+    def apply_algorithm(self):
+        if self.algorithm == "bresenham" and len(self.points) >= 2:
+            self.draw_bresenham(self.points[0], self.points[1])
+        elif self.algorithm == "circle" and len(self.points) >= 2:
+            self.draw_circle(self.points[0], self.points[1])
+        elif self.algorithm == "ellipse" and len(self.points) >= 2:
+            self.draw_ellipse(self.points[0], self.points[1])
+        elif self.algorithm == "bezier2" and len(self.points) >= 3:
+            self.draw_bezier2(self.points[0], self.points[1], self.points[2])
+        elif self.algorithm == "bezier3" and len(self.points) >= 4:
+            self.draw_bezier3(self.points[0], self.points[1], self.points[2], self.points[3])
+        elif self.algorithm == "recursive_fill" and len(self.points) >= 1:
+            self.recursive_fill()
+        elif self.algorithm == "scanline_fill" and len(self.points) >= 3:
+            self.scanline_fill()
+        elif self.algorithm == "polyline" and len(self.points) >= 3:
+            self.draw_polyline(self.points)
+        elif self.algorithm == "clip" and len(self.points) >=2:
+            self.draw_clip_window()
+            self.draw_bresenham(self.points[0], self.points[1])
+            
+
+    def draw_polyline(self, points):
+        #Desenha uma polilinha conectando todos os pontos
+        for i in range(len(points) - 1):
+            self.draw_bresenham(points[i], points[i + 1])
+        #Opcionalmente, conecte o último ponto ao primeiro para fechar a forma
+        self.draw_bresenham(points[-1], points[0])
+
+    def apply_projection(self):
+        # Define o sólido e aplica a projeção
+        if self.transformation_type == "orthogonal":
+            self.project_orthogonal()
+            self.draw_point()
+        elif self.transformation_type == "oblique":
+            self.project_oblique()
+            self.draw_point()
+        elif self.transformation_type == "perspective":
+            self.project_perspective()
+            self.draw_point()
+
+    def project_orthogonal(self):
+        # Projeção ortogonal simples (considera apenas X e Y)
+        self.polygon_points = [(x, y) for x, y, z in self.polygon_points]
+        self.draw_point()
+
+    def project_oblique(self):
+        # Projeção oblíqua com ângulo fixo (simulação)
+        angle = math.radians(45)  # ângulo oblíquo de 45 graus
+        self.polygon_points = [(x + 0.5 * z * math.cos(angle), y + 0.5 * z * math.sin(angle)) for x, y, z in self.polygon_points]
+        self.update_polygon()
+        self.draw_point()
+
+    def project_perspective(self):
+        # Projeção perspectiva com um ponto de fuga em Z
+        d = 6  # Distância do observador
+        self.polygon_points = [(d * x / (d + z), d * y / (d + z)) for x, y, z in self.polygon_points]
+        self.update_polygon()
+        self.draw_point()
+
+    def update_polygon(self):
+        #Limpa o canvas e redesenha o polígono atualizado na grade
+        self.clear_canvas()
+        for x, y in self.polygon_points:
+            canvas_x = 220 + int(x) * 20
+            canvas_y = 220 - int(y) * 20
+            self.draw_point(canvas_x, canvas_y, color="blue")
+        self.points = self.polygon_points[:]
+        self.draw_point()
+
+    def clear_canvas(self):
+        #Limpa o canvas e redesenha a grade
+        self.canvas.delete("all")
+        self.points.clear()
+        self.polygon_points.clear()
+        self.draw_grid()
+
+    #Algoritmos de desenho (Bresenham, Círculo, Elipse, Bézier)
+    def draw_bresenham(self, p1, p2):
+        x0, y0 = p1
+        x1, y1 = p2
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+
+        while True:
+            self.plot_pixel(x0, y0)
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = err * 2
+            if e2 > -dy:
+                err -= dy
+                x0 += sx
+            if e2 < dx:
+                err += dx
+                y0 += sy
+
+    def draw_circle(self, center, point):
+        cx, cy = center
+        radius = round(math.sqrt((point[0] - cx) ** 2 + (point[1] - cy) ** 2))
+        x = radius
+        y = 0
+        p = 1 - radius
+
+        while x >= y:
+            for dx, dy in [(x, y), (y, x), (-y, x), (-x, y), (-x, -y), (-y, -x), (y, -x), (x, -y)]:
+                self.plot_pixel(cx + dx, cy + dy)
+            y += 1
+            if p <= 0:
+                p += 2 * y + 1
+            else:
+                x -= 1
+                p += 2 * (y - x) + 1
+
+    def draw_ellipse(self, center, point):
+        cx, cy = center
+        rx = abs(point[0] - cx)
+        ry = abs(point[1] - cy)
+        x, y = 0, ry
+        rx_sq = rx * rx
+        ry_sq = ry * ry
+        p1 = ry_sq - (rx_sq * ry) + (0.25 * rx_sq)
+        
+        while ry_sq * x <= rx_sq * y:
+            for dx, dy in [(x, y), (-x, y), (x, -y), (-x, -y)]:
+                self.plot_pixel(cx + dx, cy + dy)
+            x += 1
+            if p1 < 0:
+                p1 += 2 * ry_sq * x + ry_sq
+            else:
+                y -= 1
+                p1 += 2 * ry_sq * x - 2 * rx_sq * y + ry_sq
+        
+        p2 = ry_sq * (x + 0.5) ** 2 + rx_sq * (y - 1) ** 2 - rx_sq * ry_sq
+        while y >= 0:
+            for dx, dy in [(x, y), (-x, y), (x, -y), (-x, -y)]:
+                self.plot_pixel(cx + dx, cy + dy)
+            y -= 1
+            if p2 > 0:
+                p2 -= 2 * rx_sq * y + rx_sq
+            else:
+                x += 1
+                p2 += 2 * ry_sq * x - 2 * rx_sq * y + rx_sq
+
+    def draw_bezier2(self, p0, p1, p2):
+        for t in [i / 100.0 for i in range(101)]:
+            x = (1 - t)**2 * p0[0] + 2 * (1 - t) * t * p1[0] + t**2 * p2[0]
+            y = (1 - t)**2 * p0[1] + 2 * (1 - t) * t * p1[1] + t**2 * p2[1]
+            self.plot_pixel(round(x), round(y))
+
+    def draw_bezier3(self, p0, p1, p2, p3):
+        for t in [i / 100.0 for i in range(101)]:
+            x = (1 - t)**3 * p0[0] + 3 * (1 - t)**2 * t * p1[0] + 3 * (1 - t) * t**2 * p2[0] + t**3 * p3[0]
+            y = (1 - t)**3 * p0[1] + 3 * (1 - t)**2 * t * p1[1] + 3 * (1 - t) * t**2 * p2[1] + t**3 * p3[1]
+            self.plot_pixel(round(x), round(y))
+    
+
+    #Algoritmos de preenchimento
+    def recursive_fill(self, start):
+        x, y = start
+        if self.get_pixel_color(x, y) != "white":
+            return
+        self.plot_pixel(x, y, self.fill_color)
+        self.recursive_fill((x+1, y))
+        self.recursive_fill((x-1, y))
+        self.recursive_fill((x, y+1))
+        self.recursive_fill((x, y-1))
+
+    def scanline_fill(self):
+        min_y = min(p[1] for p in self.polygon_points)
+        max_y = max(p[1] for p in self.polygon_points)
+        for y in range(min_y, max_y + 1):
+            nodes = []
+            j = len(self.polygon_points) - 1
+            for i in range(len(self.polygon_points)):
+                pi, pj = self.polygon_points[i], self.polygon_points[j]
+                if (pi[1] < y <= pj[1]) or (pj[1] < y <= pi[1]):
+                    x_int = int((y - pi[1]) * (pj[0] - pi[0]) / (pj[1] - pi[1]) + pi[0])
+                    nodes.append(x_int)
+                j = i
+            nodes.sort()
+            for i in range(0, len(nodes), 2):
+                for x in range(nodes[i], nodes[i+1]):
+                    self.plot_pixel(x, y, self.fill_color)
+        
+    #Funções para as projeções
+    def project_orthogonal(pontos):
+        #Projeção simples, mantendo as coordenadas x e y e descartando z
+        return pontos[:, :2]
+
+    def project_oblique(pontos, angle_x, angle_y):
+        #Matriz de rotação para a projeção obliqua
+        Rx = np.array([[1, 0, 0],
+                    [0, np.cos(angle_x), -np.sin(angle_x)],
+                    [0, np.sin(angle_x), np.cos(angle_x)]])
+        Ry = np.array([[np.cos(angle_y), 0, np.sin(angle_y)],
+                    [0, 1, 0],
+                    [-np.sin(angle_y), 0, np.cos(angle_y)]])
+
+        R = np.dot(Ry, Rx)
+        
+        pontos_rotacionados = np.dot(pontos, R.T)
+        #Projeção paralela, mantendo as coordenadas x e y
+        return pontos_rotacionados[:, :2]
+
+    def project_perspective(pontos, d):
+        # Matriz de projeção perspectiva
+        M = np.array([[1, 0, 0, 0],
+                    [0, 1, 0, 0],
+                    [0, 0, 1, -1/d],
+                    [0, 0, 0, 1]])
+        
+        pontos_homogeneos = np.hstack((pontos, np.ones((pontos.shape[0], 1))))
+        pontos_projetados = np.dot(pontos_homogeneos, M.T)
+        pontos_projetados /= pontos_projetados[:, 3:]
+        return pontos_projetados[:, :2]
+    
+    def clip_line(self, p1, p2):
+        #Algoritmo de Cohen-Sutherland para recorte de linha
+        x0, y0 = p1
+        x1, y1 = p2
+        x_min, y_min, x_max, y_max = self.clip_window
+        code0 = self.compute_code(x0, y0)
+        code1 = self.compute_code(x1, y1)
+        accept = False
+
+        while True:
+            if code0 == 0 and code1 == 0:
+                accept = True
+                break
+            elif (code0 & code1) != 0:
+                break
+            else:
+                x, y = 0, 0
+                outcode_out = code0 if code0 != 0 else code1
+                if outcode_out & TOP:
+                    x = x0 + (x1 - x0) * (y_max - y0) / (y1 - y0)
+                    y = y_max
+                elif outcode_out & BOTTOM:
+                    x = x0 + (x1 - x0) * (y_min - y0) / (y1 - y0)
+                    y = y_min
+                elif outcode_out & RIGHT:
+                    y = y0 + (y1 - y0) * (x_max - x0) / (x1 - x0)
+                    x = x_max
+                elif outcode_out & LEFT:
+                    y = y0 + (y1 - y0) * (x_min - x0) / (x1 - x0)
+                    x = x_min
+                if outcode_out == code0:
+                    x0, y0 = x, y
+                    code0 = self.compute_code(x0, y0)
+                else:
+                    x1, y1 = x, y
+                    code1 = self.compute_code(x1, y1)
+
+        if accept:
+            #Desenha a linha recortada em preto
+            self.draw_bresenham((int(x0), int(y0)), (int(x1), int(y1)), color="black")
+
+    def plot_pixel(self, x, y, color="red"):
+        canvas_x = 220 + x * 20
+        canvas_y = 220 - y * 20
+        self.canvas.create_oval(canvas_x-5, canvas_y-5, canvas_x+5, canvas_y+5, fill=color, outline="")
+
+root = tk.Tk()
+app = CoordinateSystemApp(root)
+root.mainloop()
